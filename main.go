@@ -30,7 +30,9 @@ func main() {
 
 	c := commands{make(map[string]func(*state, command) error)}
 	c.register("login", handlerLogin)
-	c.register("register", handlerRegister)
+	c.register("register", handlerRegistration)
+	c.register("reset", handlerReset)
+	c.register("users", handlerGetUsers)
 
 	args := os.Args
 	if len(args) < 2 {
@@ -94,7 +96,7 @@ func handlerLogin(s *state, cmd command) error {
 	return nil
 }
 
-func handlerRegister(s *state, cmd command) error {
+func handlerRegistration(s *state, cmd command) error {
 	if len(cmd.Args) != 1 {
 		return fmt.Errorf("Error: Login expects a single argument, the username")
 	}
@@ -109,5 +111,32 @@ func handlerRegister(s *state, cmd command) error {
 		return err
 	}
 	fmt.Println("User was created. User data:\n", usrData)
+	return nil
+}
+
+func handlerReset(s *state, cmd command) error {
+	err := s.db.Reset(context.Background())
+	if err != nil {
+		fmt.Printf("An error occured during reset.")
+		return err
+	}
+	fmt.Print("Database of users successfully reset.")
+	return nil
+}
+
+func handlerGetUsers(s *state, cmd command) error {
+	var users []database.User
+	users, err := s.db.GetUsers(context.Background())
+	if err != nil {
+		return fmt.Errorf("Error retrieving users from db: %s", err)
+	}
+	for _, user := range users {
+		if user.Name == s.cfg.CurrentUsername {
+			fmt.Printf("%s (current)\n", user.Name)
+		} else {
+			fmt.Printf("%s\n", user.Name)
+		}
+
+	}
 	return nil
 }
