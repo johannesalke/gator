@@ -13,6 +13,10 @@ RETURNING *;
 
 Select * from users where name = $1;
 
+-- name: GetUserByID :one
+
+Select * from users where id = $1;
+
 
 -- name: Reset :exec
 
