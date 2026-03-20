@@ -16,7 +16,7 @@ import (
 func main() {
 	str, _ := os.UserHomeDir()
 	fmt.Printf("%s\n", str)
-	fmt.Printf("%s\n", config.Read())
+	//fmt.Printf("%s\n", config.Read())
 
 	s := &state{cfg: config.Read()}
 
@@ -34,8 +34,11 @@ func main() {
 	c.register("reset", handlerReset)
 	c.register("users", handlerGetUsers)
 	c.register("agg", handlerFetchFeed)
-	c.register("addfeed", handlerAddFeed)
+	c.register("addfeed", middlewareLoggedIn(handlerAddFeed))
 	c.register("feeds", handlerGetFeeds)
+	c.register("follow", middlewareLoggedIn(handlerFeedFollow))
+	c.register("following", middlewareLoggedIn(handlerGetFollowing))
+	c.register("unfollow", middlewareLoggedIn(handlerUnfollowFeed))
 
 	args := os.Args
 	if len(args) < 2 {
@@ -78,6 +81,21 @@ func (c *commands) run(s *state, cmd command) error {
 }
 func (c *commands) register(name string, f func(*state, command) error) {
 	c.commands[name] = f
+}
+
+/////////////|Middleware|/////////////////////////
+
+func middlewareLoggedIn(handler func(s *state, cmd command, user database.User) error) func(*state, command) error {
+	return func(s *state, cmd command) error {
+
+		targetUser, err := s.db.GetUser(context.Background(), s.cfg.CurrentUsername)
+		if err != nil {
+			return fmt.Errorf("Error retrieving user by name:%s", err)
+		}
+
+		return handler(s, cmd, targetUser)
+	}
+
 }
 
 /////////////|Command Functions|////////////////////
@@ -154,19 +172,31 @@ func handlerFetchFeed(s *state, cmd command) error {
 	return nil
 }
 
-func handlerAddFeed(s *state, cmd command) error {
+type CreateFeedParams struct {
+	ID        uuid.UUID
+	CreatedAt time.Time
+	UpdatedAt time.Time
+	Name      string
+	Url       string
+	UserID    uuid.UUID
+}
+
+func handlerAddFeed(s *state, cmd command, currentUser database.User) error {
 	if len(cmd.Args) != 2 {
 		return fmt.Errorf("This command expects exactly 2 arguments: name and url")
 	}
-	currentUser, err := s.db.GetUser(context.Background(), s.cfg.CurrentUsername)
+	/*currentUser, err := s.db.GetUser(context.Background(), s.cfg.CurrentUsername)
 	if err != nil {
 		return fmt.Errorf("Error retrieving user_id")
-	}
-	feedParams := database.CreateFeedParams{Name: cmd.Args[0], Url: cmd.Args[1], UserID: currentUser.ID}
-	_, err = s.db.CreateFeed(context.Background(), feedParams)
+	}*/
+	feedParams := database.CreateFeedParams{ID: uuid.New(), CreatedAt: time.Now(), UpdatedAt: time.Now(), Name: cmd.Args[0], Url: cmd.Args[1], UserID: currentUser.ID}
+	feed, err := s.db.CreateFeed(context.Background(), feedParams)
 	if err != nil {
 		return fmt.Errorf("Error creating feeds table enrtry")
 	}
+	cmd.Args = []string{feed.Url}
+
+	handlerFeedFollow(s, cmd, currentUser)
 	return nil
 }
 
@@ -183,5 +213,63 @@ func handlerGetFeeds(s *state, cmd command) error {
 		}
 		fmt.Printf("Name: %s | URL: %s | User: %s\n", feeds[i].Name, feeds[i].Url, user.Name)
 	}
+	return nil
+}
+
+func handlerFeedFollow(s *state, cmd command, targetUser database.User) error {
+	if len(cmd.Args) != 1 {
+		return fmt.Errorf("Error: Follow expects a single argument, the url")
+	}
+
+	/*targetUser, err := s.db.GetUser(context.Background(), s.cfg.CurrentUsername)
+	if err != nil {
+		return fmt.Errorf("Error retrieving user by name:%s", err)
+	}*/
+	targetFeed, err := s.db.GetFeedByURL(context.Background(), cmd.Args[0])
+	if err != nil {
+		return fmt.Errorf("Error retrieving feed by URL:%s", err)
+	}
+
+	feedFollowInput := database.CreateFeedFollowParams{ID: uuid.New(), CreatedAt: time.Now(), UpdatedAt: time.Now(), UserID: targetUser.ID, FeedID: targetFeed.ID}
+	result, err := s.db.CreateFeedFollow(context.Background(), feedFollowInput)
+	if err != nil {
+		return fmt.Errorf("Error creating feed_follow entry:%s", err)
+	}
+	fmt.Printf("user '%s' followed feed '%s'", result.UserName, result.FeedName)
+	return nil
+}
+
+func handlerGetFollowing(s *state, cmd command, targetUser database.User) error {
+	if len(cmd.Args) != 0 {
+		return fmt.Errorf("Error: Follow expects no arguments")
+	}
+	/*targetUser, err := s.db.GetUser(context.Background(), s.cfg.CurrentUsername)
+	if err != nil {
+		return fmt.Errorf("Error retrieving user by name:%s", err)
+	}*/
+
+	follows, err := s.db.GetFeedFollowsForUser(context.Background(), targetUser.ID)
+	if err != nil {
+		return fmt.Errorf("Error retrieving followed feeds:%s", err)
+	}
+	for _, follow := range follows {
+		fmt.Printf("%s\n", follow.FeedName)
+	}
+	return nil
+}
+
+func handlerUnfollowFeed(s *state, cmd command, targetUser database.User) error {
+
+	targetFeed, err := s.db.GetFeedByURL(context.Background(), cmd.Args[0])
+	if err != nil {
+		return fmt.Errorf("Error retrieving feed by URL:%s", err)
+	}
+
+	unfollowInput := database.UnfollowFeedParams{FeedID: targetFeed.ID, UserID: targetUser.ID}
+	_, err = s.db.UnfollowFeed(context.Background(), unfollowInput)
+	if err != nil {
+		return fmt.Errorf("Error removing follow:%s", err)
+	}
+	fmt.Printf("You are no longer following: %s\n", targetFeed.Name)
 	return nil
 }
