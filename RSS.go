@@ -2,11 +2,18 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"encoding/xml"
 	"fmt"
 	"html"
 	"io"
 	"net/http"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/johannesalke/gator/internal/database"
+	//"time"
+	//"github.com/johannesalke/gator/internal/database"
 )
 
 type RSSFeed struct {
@@ -60,4 +67,50 @@ func fetchFeed(ctx context.Context, feedURL string) (*RSSFeed, error) {
 		rssFeed.Channel.Item[i].EscapeRSSItem()
 	}
 	return &rssFeed, err
+}
+
+func scrapeFeed(s *state) error {
+
+	feed, err := s.db.GetNextFeedToFetch(context.Background())
+	if err != nil {
+		return fmt.Errorf("Error retrieving feeds for fetching: %s", err)
+	}
+
+	feed_id := feed.ID
+	_, err = s.db.MarkFeedFetched(context.Background(), feed_id)
+	if err != nil {
+		return fmt.Errorf("Error marking feeds as fetched")
+	}
+	rssObj, err := fetchFeed(context.Background(), feed.Url)
+	if err != nil {
+		return err
+	}
+	//dbPosts := make([]database.Post,len(rssObj.Channel.Item))
+	for _, feedEntry := range rssObj.Channel.Item {
+		fmt.Printf("%s\n", feedEntry.Title)
+
+		var publishedAt sql.NullTime
+		if t, err := time.Parse(time.RFC1123Z, feedEntry.PubDate); err == nil {
+			publishedAt = sql.NullTime{
+				Time:  t,
+				Valid: true,
+			}
+		}
+		description := sql.NullString{String: feedEntry.Description, Valid: true}
+
+		postParams := database.CreatePostParams{
+			ID:          uuid.New(),
+			Title:       feedEntry.Title,
+			Url:         feedEntry.Link,
+			Description: description,
+			PublishedAt: publishedAt,
+			FeedID:      feed_id,
+		}
+		_, err := s.db.CreatePost(context.Background(), postParams)
+		if err != nil {
+			return fmt.Errorf("Error inserting post: %s", err)
+		}
+
+	}
+	return nil
 }
