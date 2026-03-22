@@ -8,7 +8,7 @@ CREATE TABLE posts (
     url text not null unique,
     description text,
     published_at timestamp,
-    feed_id uuid not null
+    feed_id uuid not null on delete cascade
 
 );
 

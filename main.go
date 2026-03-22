@@ -42,10 +42,11 @@ func main() {
 	c.register("following", middlewareLoggedIn(handlerGetFollowing))
 	c.register("unfollow", middlewareLoggedIn(handlerUnfollowFeed))
 	c.register("browse", middlewareLoggedIn(handlerBrowse))
+	c.register("help", handlerHelp)
 
 	args := os.Args
 	if len(args) < 2 {
-		fmt.Print("Error: No arguments given.\n")
+		fmt.Print("Error: No arguments given. For a listing of valid commands, enter 'gator help'.\n")
 		os.Exit(1)
 	}
 	cmd := command{Name: args[1], Args: args[2:]}
@@ -307,5 +308,31 @@ func handlerBrowse(s *state, cmd command, targetUser database.User) error {
 		fmt.Printf("%s\n\n", post.Description.String)
 
 	}
+	return nil
+}
+
+func handlerHelp(s *state, cmd command) error {
+
+	fmt.Println(`
+	The commands available with this utility are as follows:
+	- register <name>: Registers a new user
+	- login <name>: Log in as the given user. no password required
+	- reset: WARNING! This deletes all databases.
+	- users: List all registered users
+	- addfeed <feed_name> <url>: Add a feed to the feeds table by its name and url. It will be registered under your user name.
+	- feeds: List all feeds in the database.
+	- follow <url>: Follow a feed in the database. Requires that this feed is already registered. 
+	- following: List all follow relationships between feeds and users. 
+	- unfollow <url>: Stop following a feed. 
+	- agg <timespan>: The utility will cycle through the feeds you follow and request the RSS feed of one every <timespan>. 
+	  Time is set with e.g. 30s for 30 seconds or 1m for 1 minute. Do not set it too short to avoid DOS-ing the followed feeds.
+	  Exit aggregation mode with ctrl+c.
+	- browse <number>: Browse the <number> most recent items from the aggregated feed. Titles, Urls and descriptions are printed to console. 
+	  The default value of <number> is two.
+	  
+	=============================================
+	Minimal usage pattern to receive feeds:
+	register -> addfeed -> follow -> agg -> browse
+	`)
 	return nil
 }
