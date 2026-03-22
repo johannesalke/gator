@@ -36,4 +36,4 @@ Commands:
 - gator register |name| - Register a new user
 - gator login |name| - Log in as this user. No password required.
 - gator follow |url| - Follow the feed specified by this url.
-- 
+- gator help - list all commands, their arguments and functions.
